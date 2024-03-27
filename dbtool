@@ -1,0 +1,85 @@
+#!/bin/bash
+set -euo pipefail
+
+me=$(basename $0)
+version=1.0.2402.1
+
+# Read the configuration from all config files found
+CONFPATH="/etc/${me}:/usr/local/etc/${me}:.config:./config:."
+for _p in ${CONFPATH//:/\ }; do
+    test -f ${_p}/${me}.conf && \
+        source ${_p}/${me}.conf
+done
+
+# Default Paths
+: ${cfgdir:=$(realpath -eL $(pwd))/config}
+: ${libdir:=$(realpath -eL $(pwd))/lib}
+: ${datadir:=$(realpath -eL $(pwd))/data}
+: ${plugindir:=$(realpath -eL $(pwd))/plugins}
+
+# Load Libraries
+source ${libdir}/builtin/gettext.bash
+source ${libdir}/builtin/getopts.bash
+source ${libdir}/builtin/ui.bash
+
+debug=true
+${ui}.init $"Starting %s [version: %s]\n" ${me^^} ${version}
+
+# Load Entities
+${debug:-z} && ${ui}.debug
+${ui}.debug 'item' $"Loading entities: "
+for _s in ${libdir}/entities/*.bash; do
+    test -f ${_s} && \
+        ${ui}.debug 'emphasis' $"%s " $(basename "${_s/.bash*}") && \
+    source ${_s}
+done
+${debug:-z} && ${ui}.print '\n'
+
+# Load Commands
+${debug:-z} && ${ui}.debug
+${ui}.debug 'item' $"Loading commands: "
+for _s in ${libdir}/commands/*.bash; do
+    test -f ${_s} && \
+    ${ui}.debug 'emphasis' $"%s " $(basename "${_s/.bash*}") && \
+    source ${_s}
+done
+${debug:-z} && ${ui}.print '\n'
+
+begin() {
+    host.set
+}
+
+options="${options}Hi"
+while getopts ${options} _opt; do
+    case ${_opt} in
+        H) ${ui}.print '\n' && \
+           ${ui}.info && \
+           ${ui}.print $"Usage: %s [options]\n\n" $(basename ${0}) && \
+           exit $?
+        ;;
+        :) ${ui}.error && \
+           ${ui}.print $"Aborted: Option '-%s' requires an argument.\n\n" \
+               ${OPTARG} && exit $?
+        ;;
+        i) INTERACTIVE=true ;;
+        ${_opt}) eval "${arguments[${_opt}]}=${OPTARG,,}" ;;
+    esac
+done
+
+(( OPTIND == 1 )) && INTERACTIVE=true
+shift $((OPTIND - 1))
+
+if ! ${INTERACTIVE}; then
+    for o in ${!arguments[@]}; do
+        eval "_requires_opt ${o} \\\${${arguments[$o]}}"
+    done
+fi
+
+begin
+
+# Run the command
+eval \${$(echo ${arguments['c']})}.run
+
+exit $?
+
+# vim: ts=4:sw=4:sts=4:et
